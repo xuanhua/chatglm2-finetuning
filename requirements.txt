@@ -1,2 +1,2 @@
-
 logzero
+transformers >= 4.33.0

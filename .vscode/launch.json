@@ -1,0 +1,38 @@
+{
+  // Use IntelliSense to learn about possible attributes.
+  // Hover to view descriptions of existing attributes.
+  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Python Debugger: Current File",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${file}",
+      "console": "integratedTerminal",
+      "env": {
+        "PYTHONPATH": "/data/xuanhua/hg_models:${workspaceFolder}"
+      },
+      "justMyCode": false,
+    },
+    {
+      "name": "debug predict_pretrained.py",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/inference/predict_pretrained.py",
+      "console": "integratedTerminal",
+      "env": {
+        "PYTHONPATH": ".:/data/xuanhua/hg_models:${workspaceFolder}"
+      },
+      "justMyCode": false,
+      "args": [
+        "--test_path",
+        "${workspaceFolder}/data/tb_1.jsonl",
+        "--device",
+        "1",
+        "--result_path",
+        "${workspaceFolder}/data/output/tb_1_result_chatglm2.txt"
+      ]
+    }
+  ]
+}

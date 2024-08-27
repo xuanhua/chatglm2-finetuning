@@ -1,7 +1,14 @@
 import torch
 import json
-from chatglm2_6b.modeling_chatglm import ChatGLMForConditionalGeneration
-from chatglm2_6b.tokenization_chatglm import ChatGLMTokenizer
+
+USE_CHATGLM_6B_V1 = False
+if USE_CHATGLM_6B_V1:
+    from chatglm_6b.modeling_chatglm import ChatGLMForConditionalGeneration
+    from chatglm_6b.tokenization_chatglm import ChatGLMTokenizer
+else:
+    from chatglm2_6b.modeling_chatglm import ChatGLMForConditionalGeneration
+    from chatglm2_6b.tokenization_chatglm import ChatGLMTokenizer
+
 
 #from modeling_chatglm import ChatGLMForConditionalGeneration
 #from tokenization_chatglm import ChatGLMTokenizer
@@ -16,15 +23,19 @@ from logzero import logger
 from transformers import AutoTokenizer
 
 
-
-from config import CHATGLM_6B_V2_BASE_MODEL_PATH
+if USE_CHATGLM_6B_V1:
+    from config import CHATGLM_6B_V1_BASE_MODEL_PATH
+    base_model_path = CHATGLM_6B_V1_BASE_MODEL_PATH
+else:
+    from config import CHATGLM_6B_V2_BASE_MODEL_PATH
+    base_model_path = CHATGLM_6B_V2_BASE_MODEL_PATH 
 
 def set_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--test_path', default='data/tb_1.jsonl', type=str, help='')
     parser.add_argument('--device', default='1', type=str, help='')
     parser.add_argument('--model_dir',
-                        default=CHATGLM_6B_V2_BASE_MODEL_PATH, 
+                        default=base_model_path, 
                         type=str,
                         help='')
     parser.add_argument('--max_len', type=int, default=768, help='Maximum allowed length of tokens, including the prompt part and generated part')
@@ -36,7 +47,7 @@ def main():
     args = set_args()
     model = ChatGLMForConditionalGeneration.from_pretrained(args.model_dir)
     #tokenizer = ChatGLMTokenizer.from_pretrained(args.model_dir, padding_side='left')
-    tokenizer = AutoTokenizer.from_pretrained(CHATGLM_6B_V2_BASE_MODEL_PATH, trust_remote_code=True)
+    tokenizer = AutoTokenizer.from_pretrained(base_model_path, trust_remote_code=True)
     model.eval()
     model.half().to("cuda:{}".format(args.device))
 
@@ -48,12 +59,22 @@ def main():
         for i, line in enumerate(tqdm(fh, desc="iter")):
             with torch.no_grad():
                 sample = json.loads(line.strip())
+
+                if USE_CHATGLM_6B_V1:
+                    pass
+                else:
+                    sample["text"] = "[Round {}]\n\n问：{}\n\n答：".format(1, sample["text"])
+
                 src_tokens = tokenizer.tokenize(sample["text"])
 
                 if len(src_tokens) >= args.max_src_len:
                     logger.warning(f"{i}th src text is too long, skipping this line.")
 
-                tokens = src_tokens + ["[gMASK]", "<sop>"]
+                if USE_CHATGLM_6B_V1:
+                    tokens = src_tokens + ["[gMASK]", "<sop>"]
+                else:
+                    tokens = ["[gMASK]", "<sop>"] + src_tokens
+
                 input_ids = tokenizer.convert_tokens_to_ids(tokens)
 
                 input_ids = torch.tensor([input_ids]).to("cuda:{}".format(args.device))

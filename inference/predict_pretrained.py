@@ -9,10 +9,6 @@ else:
     from chatglm2_6b.modeling_chatglm import ChatGLMForConditionalGeneration
     from chatglm2_6b.tokenization_chatglm import ChatGLMTokenizer
 
-
-#from modeling_chatglm import ChatGLMForConditionalGeneration
-#from tokenization_chatglm import ChatGLMTokenizer
-#from peft import get_peft_model, LoraConfig, TaskType, PeftModel
 from tqdm import tqdm
 import time
 import os
@@ -70,12 +66,17 @@ def main():
                 if len(src_tokens) >= args.max_src_len:
                     logger.warning(f"{i}th src text is too long, skipping this line.")
 
+                #if USE_CHATGLM_6B_V1:
+                #    tokens = src_tokens + ["[gMASK]", "<sop>"]
+                #else:
+                #    tokens = ["[gMASK]", "<sop>"] + src_tokens
+                
                 if USE_CHATGLM_6B_V1:
                     tokens = src_tokens + ["[gMASK]", "<sop>"]
+                    input_ids = tokenizer.convert_tokens_to_ids(tokens)
                 else:
-                    tokens = ["[gMASK]", "<sop>"] + src_tokens
-
-                input_ids = tokenizer.convert_tokens_to_ids(tokens)
+                    input_ids = tokenizer.convert_tokens_to_ids(src_tokens)
+                    input_ids = tokenizer.build_inputs_with_special_tokens(token_ids_0=input_ids)
 
                 input_ids = torch.tensor([input_ids]).to("cuda:{}".format(args.device))
                 generation_kwargs = {

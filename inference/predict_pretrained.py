@@ -16,8 +16,7 @@ import argparse
 from pprint import pprint
 from logzero import logger
 
-from transformers import AutoTokenizer
-
+#from transformers import AutoTokenizer
 
 if USE_CHATGLM_6B_V1:
     from config import CHATGLM_6B_V1_BASE_MODEL_PATH
@@ -42,8 +41,8 @@ def set_args():
 def main():
     args = set_args()
     model = ChatGLMForConditionalGeneration.from_pretrained(args.model_dir)
-    #tokenizer = ChatGLMTokenizer.from_pretrained(args.model_dir, padding_side='left')
-    tokenizer = AutoTokenizer.from_pretrained(base_model_path, trust_remote_code=True)
+    tokenizer = ChatGLMTokenizer.from_pretrained(args.model_dir, padding_side='left')
+    #tokenizer = AutoTokenizer.from_pretrained(base_model_path, trust_remote_code=True)
     model.eval()
     model.half().to("cuda:{}".format(args.device))
 
@@ -66,11 +65,6 @@ def main():
                 if len(src_tokens) >= args.max_src_len:
                     logger.warning(f"{i}th src text is too long, skipping this line.")
 
-                #if USE_CHATGLM_6B_V1:
-                #    tokens = src_tokens + ["[gMASK]", "<sop>"]
-                #else:
-                #    tokens = ["[gMASK]", "<sop>"] + src_tokens
-                
                 if USE_CHATGLM_6B_V1:
                     tokens = src_tokens + ["[gMASK]", "<sop>"]
                     input_ids = tokenizer.convert_tokens_to_ids(tokens)

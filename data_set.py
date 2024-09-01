@@ -5,51 +5,67 @@ import torch
 from chatglm2_6b.modeling_chatglm import ChatGLMForConditionalGeneration
 from chatglm2_6b.tokenization_chatglm import ChatGLMTokenizer
 
+
+def build_prompt(query:str) -> str:
+    """
+    The origininal implementation is ChatGLMTokenizer.build_prompt(), but we did not use chat history in our implementation.
+    This function is used to build prompt adapted to original ChatGLM2 model.
+    
+    Args:
+        query (str): raw prompt string.
+    """
+    return  "[Round {}]\n\n问：{}\n\n答：".format(1, query)
+
 class GLMPromptDataSet(Dataset):
     def __init__(self, 
                  data_path:str,
                  tokenizer:ChatGLMTokenizer,
                  max_len:int,
                  max_src_len:int,
-                 skip_overlength_example:bool):
+                 skip_overlength_example:bool=True,
+                 ignore_pad_token_for_loss:bool=True):
+        """
+        Args:
+            data_path (str): path to the raw dataset file.
+            tokenizer (ChatGLMTokenizer): tokenizer instance to use.
+            max_len (int): maximum length of all tokens, including query, answer and paddings.
+            max_src_len (int): maximum length of source text.
+            skip_overlength_example (bool): if True, examples that exceed the `max_len` will be skipped.
+        """
         self.all_data = []
         n_skipped_examples = 0
         with open(data_path, "r", encoding="utf-8") as fh:
             for i, line in enumerate(fh):
                 sample = json.loads(line.strip())
-                skip_flag = False
-                prompt_tokens = tokenizer.tokenize(prompt_text)
-                src_tokens = tokenizer.tokenize(sample["text"])
-                src_tokens = prompt_tokens + src_tokens
 
-                if len(src_tokens) > max_src_len:
-                    src_tokens = src_tokens[:max_src_len]
-                    skip_flag = True
+                # **Convert both query and answer part to ids with some special tokens in query part**
+                # Below logic is copied from: git@github.com:THUDM/ChatGLM2-6B.git/ptuning/main.py
+                prompt = build_prompt(sample["text"])
+                a_ids = tokenizer.encode(prompt, add_special_tokens=True, truncation=True, max_length=max_src_len)
+                # The max_target_lenght = max_len - max_src_len - 1 (the last one is the special token 'eos')
+                b_ids = tokenizer.encode(sample["answer"], add_special_tokens=True, truncation=True, max_length=max_len - max_src_len -1)
 
-                max_tgt_len = max_len - 3 - len(src_tokens)
-                tgt_tokens = tokenizer.tokenize(sample["answer"])
-
-                if len(tgt_tokens) > max_tgt_len:
-                    tgt_tokens = tgt_tokens[:max_tgt_len]
-                    skip_flag = True
-
-                tokens = src_tokens + ["[gMASK]", "<sop>"] + tgt_tokens + ["<eop>"]
-                assert len(tokens) <= max_len
-
-                input_ids = tokenizer.convert_tokens_to_ids(tokens)
-                context_length = input_ids.index(tokenizer.bos_token_id)
-                mask_position = context_length - 1
-                labels = [-100] * context_length + input_ids[mask_position + 1:]
+                # **Merge the query and answer part into one sequence and create two fields: 'inputs_ids', 'labels'**
+                context_length = len(a_ids)
+                input_ids = a_ids + b_ids + [tokenizer.eos_token_id]
+                labels = [tokenizer.pad_token_id] * context_length + b_ids  + [tokenizer.eos_token_id]
 
                 pad_len = max_len - len(input_ids)
-                input_ids = input_ids + [tokenizer.pad_token_id] * pad_len
-                labels = labels + [-100] * pad_len
-
-                assert len(input_ids) == len(labels)
-                assert len(input_ids) == max_len
-                if skip_overlength_example and skip_flag:
-                    n_skipped_examples += 1
+                if pad_len < 0 and skip_overlength_example:
+                    print(f"Ignore example {i}, query={prompt[:20]}...")
                     continue
+
+                # **Padding the right side of the inputs_ids and labels with 'pad_token' ids**
+                input_ids = input_ids + [tokenizer.pad_token_id] * pad_len
+                labels = labels + [tokenizer.pad_token_id] * pad_len 
+
+                if ignore_pad_token_for_loss:
+                    """
+                    Set all src input ids as -100, which is ignored by loss function during training.
+                    And also right side padding ids
+                    """
+                    labels = [ (l if l != tokenizer.pad_token_id else -100) for l in labels] 
+
                 self.all_data.append(
                     {"input_ids": torch.LongTensor(input_ids), "labels": torch.LongTensor(labels)})
         print("the number of skipping data is {}, the proportion is {}".format(n_skipped_examples, n_skipped_examples / (

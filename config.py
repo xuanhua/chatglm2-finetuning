@@ -4,7 +4,13 @@ HOME = os.path.dirname(__file__)
 DATA_HOME = os.path.join(HOME, 'data')
 
 # huggingface model downloaded
+# https://huggingface.co/THUDM/chatglm2-6b
+# d2e2d91789248536a747d9ce60642a336444186c
 CHATGLM_6B_V2_BASE_MODEL_PATH="/data/xuanhua/hg_models/chatglm2_6b"
+
+# huggingface model version
+# https://huggingface.co/THUDM/chatglm-6b
+# commit: bf0f5cfb575eebebf9b655c5861177acfee03f16
 CHATGLM_6B_V1_BASE_MODEL_PATH="/data/xuanhua/hg_models/chatglm_6b"
 
-#PROMPT_TEXT = "你现在是一个行程预定助理，你从用户和机器人的对话中，总结并生成Json结构的回复内容，包括‘行程’以及‘回复’ 两个部分。行程中会包括机票、火车票、酒店、用车等预定要求；下面是用户和机器人的对话："
+MODEL_SAVED_HOME = "/data/xuanhua/chatglm2-finetuned-models/"

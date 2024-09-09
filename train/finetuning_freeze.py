@@ -1,13 +1,24 @@
-from modeling_chatglm import ChatGLMForConditionalGeneration
-from tokenization_chatglm import ChatGLMTokenizer
+from chatglm2_6b.modeling_chatglm import ChatGLMForConditionalGeneration
+from chatglm2_6b.tokenization_chatglm import ChatGLMTokenizer
+
 import torch
 import deepspeed
 import argparse
 from torch.utils.data import RandomSampler, DataLoader
-from data_set import Seq2SeqDataSet, coll_fn
+
+#from data_set import Seq2SeqDataSet, coll_fn
+from data_set import (
+  GLMPromptDataSet,
+  DataCollatorForPromptDataset
+)
+
 import os
 from shutil import copy
 
+from config import (
+  CHATGLM_6B_V2_BASE_MODEL_PATH,
+  MODEL_SAVED_HOME
+)
 
 def print_trainable_parameters(model):
     trainable_params = 0
@@ -23,26 +34,19 @@ def print_trainable_parameters(model):
     print(
         f"trainable params: {trainable_params} || all params: {all_param} || trainable%: {100 * trainable_params / all_param}")
 
-
 def set_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--train_path', default='data/spo_0.json', type=str, help='')
-    #parser.add_argument('--model_dir', default="/data/work/lcong/public_model_path/ChatGLM-6B/", type=str, help='')
-    #parser.add_argument('--model_dir', default="/home/ubuntu/.cache/huggingface/hub/models--THUDM--chatglm-6b/snapshots/f83182484538e663a03d3f73647f10f89878f438", type=str, help='')
-    parser.add_argument('--model_dir', default="/home/ubuntu/proj/chatglm-model-files-2023-06-12/ChatGLM-6B", type=str, help='')
+    parser.add_argument('--train_path', default='data/tb_0.jsonl', type=str, help='training data path')
+    parser.add_argument('--model_dir', default=CHATGLM_6B_V2_BASE_MODEL_PATH, type=str, help='original huggingface model')
     parser.add_argument('--num_train_epochs', default=5, type=int, help='')
     parser.add_argument('--train_batch_size', default=2, type=int, help='')
     parser.add_argument('--gradient_accumulation_steps', default=1, type=int, help='')
-    parser.add_argument('--output_dir', default='models/output_dir_freeze/', type=str, help='')
+    parser.add_argument('--output_dir', default=os.path.join(MODEL_SAVED_HOME, 'output_freeze'), type=str, help='')
     parser.add_argument('--log_steps', type=int, default=10, help='')
     parser.add_argument('--max_len', type=int, default=768, help='')
     parser.add_argument('--max_src_len', type=int, default=450, help='')
     parser.add_argument('--local_rank', type=int, default=0, help='')
-    parser.add_argument('--prompt_text', type=str,
-                        default="你现在是一个信息抽取模型，请你帮我抽取出关系内容为\"性能故障\", \"部件故障\", \"组成\"和 \"检测工具\"的相关三元组，三元组内部用\"_\"连接，三元组之间用\\n分割。文本：",
-                        help='')
     return parser.parse_args()
-
 
 def main():
     args = set_args()
@@ -50,10 +54,6 @@ def main():
     model = ChatGLMForConditionalGeneration.from_pretrained(args.model_dir)
     tokenizer = ChatGLMTokenizer.from_pretrained(args.model_dir)
     model = model.half().cuda()
-    #model = model.float()
-    #model.train()
-    #model.compile()
-
 
     conf = {"train_micro_batch_size_per_gpu": args.train_batch_size,
             "gradient_accumulation_steps": args.gradient_accumulation_steps,
@@ -97,11 +97,17 @@ def main():
         if param.requires_grad == True:
             print(name)
 
-    train_dataset = Seq2SeqDataSet(args.train_path, tokenizer, args.max_len, args.max_src_len, args.prompt_text)
+    train_dataset = GLMPromptDataSet(data_path=args.train_path, 
+                                     tokenizer=tokenizer, 
+                                     max_len = args.max_len,
+                                     max_src_len= args.max_src_len,
+                                     skip_overlength_example=True,
+                                     ignore_pad_token_for_loss=True
+                                    )
     train_dataloader = DataLoader(train_dataset,
                                   batch_size=conf["train_micro_batch_size_per_gpu"],
                                   sampler=RandomSampler(train_dataset),
-                                  collate_fn=coll_fn,
+                                  collate_fn=DataCollatorForPromptDataset(),
                                   drop_last=True,
                                   num_workers=0)
 
@@ -127,9 +133,9 @@ def main():
             if global_step % args.log_steps == 0:
                 print("loss:{}, global_step:{}".format(float(loss.item()), global_step))
         save_dir = os.path.join(args.output_dir, f"global_step-{global_step}")
-        model_engine.save_pretrained(save_dir)
-        copy(os.path.join(args.model_dir, "tokenizer_config.json"), os.path.join(save_dir, "tokenizer_config.json"))
-        copy(os.path.join(args.model_dir, "ice_text.model"), os.path.join(save_dir, "ice_text.model"))
+        model_engine.save_pretrained(save_dir, max_shard_size="2GB")
+        #copy(os.path.join(args.model_dir, "tokenizer_config.json"), os.path.join(save_dir, "tokenizer_config.json"))
+        #copy(os.path.join(args.model_dir, "ice_text.model"), os.path.join(save_dir, "ice_text.model"))
 
 
 if __name__ == "__main__":

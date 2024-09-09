@@ -1,12 +1,13 @@
 import json
 from torch.utils.data import Dataset
+from torch.nn.utils.rnn import pad_sequence
 import torch
 
 from chatglm2_6b.modeling_chatglm import ChatGLMForConditionalGeneration
 from chatglm2_6b.tokenization_chatglm import ChatGLMTokenizer
 
 
-def build_prompt(query:str) -> str:
+def _build_prompt(query:str) -> str:
     """
     The origininal implementation is ChatGLMTokenizer.build_prompt(), but we did not use chat history in our implementation.
     This function is used to build prompt adapted to original ChatGLM2 model.
@@ -40,10 +41,10 @@ class GLMPromptDataSet(Dataset):
 
                 # **Convert both query and answer part to ids with some special tokens in query part**
                 # Below logic is copied from: git@github.com:THUDM/ChatGLM2-6B.git/ptuning/main.py
-                prompt = build_prompt(sample["text"])
+                prompt = _build_prompt(sample["text"])
                 a_ids = tokenizer.encode(prompt, add_special_tokens=True, truncation=True, max_length=max_src_len)
                 # The max_target_lenght = max_len - max_src_len - 1 (the last one is the special token 'eos')
-                b_ids = tokenizer.encode(sample["answer"], add_special_tokens=True, truncation=True, max_length=max_len - max_src_len -1)
+                b_ids = tokenizer.encode(sample["answer"], add_special_tokens=False, truncation=True, max_length=max_len - max_src_len -1)
 
                 # **Merge the query and answer part into one sequence and create two fields: 'inputs_ids', 'labels'**
                 context_length = len(a_ids)
@@ -86,7 +87,15 @@ class DataCollatorForPromptDataset(object):
         for instance in samples:
             input_ids_list.append(instance["input_ids"])
             labels_list.append(instance["labels"])
-        return ((torch.stack(input_ids_list), torch.stack(labels_list)), torch.stack(labels_list))
+        # Currently there should be no expanding needed, otherwise it should be wrong.
+        if input_ids_list:
+            for i in range(len(input_ids_list)):
+                if i + 1 < len(input_ids_list):
+                    assert len(input_ids_list[i]) == len(input_ids_list[i + 1]), "All instances should have the same length."
+        return {
+            "input_ids": pad_sequence(input_ids_list, batch_first=True, padding_value=0),
+            "labels": pad_sequence(labels_list, batch_first=True, padding_value=-100)
+        }
 
 if __name__ == "__main__":
     # test the dataset and collator

@@ -33,6 +33,22 @@
         "--result_path",
         "${workspaceFolder}/data/output/tb_1_result_chatglm2.txt"
       ]
+    },
+    {
+      "name": "debug finetuning_freeze.py",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "/home/ubuntu/anaconda3/bin/deepspeed",
+      "cwd": "${workspaceFolder}",
+      "args": [
+        "--num_gpus",
+        "1",
+        "--master_port",
+        "6666",
+        "train/finetuning_freeze.py"
+      ],
+      "console": "integratedTerminal",
+      "justMyCode": false
     }
   ]
 }

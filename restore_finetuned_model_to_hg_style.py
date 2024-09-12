@@ -78,9 +78,13 @@ HG_MODEL_REQUIRED_FILES = [
     "tokenizer.model"
 ]
 
+DROPPED_FILES_IN_FINETUNED_MODEL = [
+    "generation_config.json"
+]
+
 import os
 
-def rename_to_backup_file(path)->None:
+def _rename_to_backup_file(path)->None:
     """
     Rename file with a new name, so that its content could be kept for future reference.
     """
@@ -100,6 +104,13 @@ def rename_to_backup_file(path)->None:
     new_path = os.path.join(dirname, basename)
     shutil.move(path, new_path)
 
+def rm_unused_in_finetuned_model(args:argparse.Namespace):
+    """
+    Drop unnecessary files in finetuned model, some of these files are conflicted with original HuggingFace GLM model,
+    """
+    finetuned_model_path = args.finetuned_model_path
+    for fname in DROPPED_FILES_IN_FINETUNED_MODEL:
+        shutil.rmtree(os.path.join(finetuned_model_path, fname), ignore_errors=True)
 
 def cp_hg_model_required_files(args:argparse.Namespace):
     """
@@ -115,7 +126,7 @@ def cp_hg_model_required_files(args:argparse.Namespace):
         dest_path = os.path.join(finetuned_path, fname)
         if os.path.exists(src_path):
             if os.path.exists(dest_path):
-                rename_to_backup_file(dest_path)
+                _rename_to_backup_file(dest_path)
             shutil.copyfile(src_path, dest_path)
         else:
             logger.warning(f"{fname} in huggingface base model cannot be found!")
@@ -128,4 +139,5 @@ def set_args():
 
 if __name__ == "__main__":
     args = set_args()
+    rm_unused_in_finetuned_model(args)
     cp_hg_model_required_files(args)

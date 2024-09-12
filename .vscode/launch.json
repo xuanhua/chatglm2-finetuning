@@ -49,6 +49,19 @@
       ],
       "console": "integratedTerminal",
       "justMyCode": false
+    },
+    {
+      "name": "debug restore_finetuned_model_to_hg_style.py",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/restore_finetuned_model_to_hg_style.py",
+      "cwd": "${workspaceFolder}",
+      "args": [
+        "--finetuned-model-path",
+        "/data/xuanhua/chatglm2-finetuned-models/output_freeze/global_step-449"
+      ],
+      "console": "integratedTerminal",
+      "justMyCode": false
     }
   ]
 }

@@ -1,3 +1,8 @@
+## 2024-09-12
+There seems to be a bug in `engine.save_pretrained()`. It output a wrong model size in pytorch_model.bin.index.json.
+Not sure if this could cause any problem in inference stage.
+
+
 ## 2024-08-27
 
 1. First the input text will be wrapped like this:

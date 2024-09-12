@@ -35,6 +35,27 @@
       ]
     },
     {
+      "name": "debug predict_pretrained.py with finetuned model",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/inference/predict_pretrained.py",
+      "console": "integratedTerminal",
+      "env": {
+        "PYTHONPATH": ".:/data/xuanhua/hg_models:${workspaceFolder}"
+      },
+      "justMyCode": false,
+      "args": [
+        "--model_dir",
+        "/data/xuanhua/chatglm2-finetuned-models/output_freeze/global_step-449",
+        "--test_path",
+        "${workspaceFolder}/data/tb_1.jsonl",
+        "--device",
+        "1",
+        "--result_path",
+        "${workspaceFolder}/data/output/tb_1_result_chatglm2_with_finetuned_model.txt"
+      ]
+    },
+    {
       "name": "debug finetuning_freeze.py",
       "type": "debugpy",
       "request": "launch",

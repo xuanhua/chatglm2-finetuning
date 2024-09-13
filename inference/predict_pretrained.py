@@ -42,7 +42,6 @@ def main():
     args = set_args()
     model = ChatGLMForConditionalGeneration.from_pretrained(args.model_dir)
     tokenizer = ChatGLMTokenizer.from_pretrained(args.model_dir, padding_side='left')
-    #tokenizer = AutoTokenizer.from_pretrained(base_model_path, trust_remote_code=True)
     model.eval()
     model.half().to("cuda:{}".format(args.device))
 

@@ -83,6 +83,16 @@
       ],
       "console": "integratedTerminal",
       "justMyCode": false
+    },
+    {
+      "name": "debug utils.py",
+      "type": "debugpy",
+      "request": "launch",
+      "python": "/home/ubuntu/anaconda3/bin/python",
+      "module": "chatglm2_finetuning.utils",
+      "cwd": "${workspaceFolder}/../",
+      "console": "integratedTerminal",
+      "justMyCode": false
     }
   ]
 }

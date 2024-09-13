@@ -22,6 +22,35 @@ import importlib
 def load_class_from_package(package_dir:str, full_class_name:str):
   """
   Load a class from a package given its full name and the directory of the package.
+
+  Typical usage:
+  ```python
+  cls = load_class_from_package("/data/xuanhua/chatglm2-finetuned-models/output_freeze/global_step_449", 
+                          "modeling_chatglm.ChatGLMForConditionalGeneration")
+  ```
+
+  If you want to debug code using this function, make sure you use 'python -m yourscript.py' to launch the script.
+  Here is the vscode launch configuration:
+  ```json
+  {
+      "name": "debug utils.py",
+      "type": "debugpy",
+      "request": "launch",
+      "python": "/home/ubuntu/anaconda3/bin/python",
+      "module": "chatglm2_finetuning.utils",
+      "cwd": "${workspaceFolder}/../",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    }
+  ```
+  This configuration equivalent to run the script with python -m command. like:
+  ```bash
+  # 'chatglm2_finetuning' is the current project
+  python -m chatglm2_finetuning.utils
+  ```
+  For more information about 'python -m', please see: https://stackoverflow.com/questions/7610001/what-is-the-purpose-of-the-m-switch
+
+  TODO: maybe we need a bash script for testing the fine-tuned model, which is wrapped as a huggingface model.
   """
   if not os.path.isdir(package_dir):
     raise ImportError("The provided package directory does not exist: {0}".format(package_dir))
@@ -35,10 +64,6 @@ def load_class_from_package(package_dir:str, full_class_name:str):
   if (package_parent_path not in sys.path):
     sys.path.insert(0, package_parent_path)
   
-  #os.chdir(package_path) # For the relative imports to work in the package we need to change current working directory to parent dir of the package.
-  #if "." not in sys.path:
-  #  sys.path.insert(0,".")   # For the relative imports to work in the package we need to add current directory ('.') to python path.
-
   try:
     package_name = os.path.basename(package_dir)
     module_name, class_name = full_class_name.rsplit('.', maxsplit=1)
@@ -57,8 +82,3 @@ if __name__ == "__main__":
                           "modeling_chatglm.ChatGLMForConditionalGeneration")
   print(f"{cls}")
   print("Done")
-
-  """
-  model = ChatGLMForConditionalGeneration.from_pretrained(args.model_dir)
-  tokenizer = ChatGLMTokenizer.from_pretrained(args.model_dir, padding_side='left')
-  """

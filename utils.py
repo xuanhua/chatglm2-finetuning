@@ -1,7 +1,10 @@
 from typing import (
+  Any,
   Dict,
   List,
-  Union
+  Iterator,
+  Union,
+  Tuple
 )
 from pprint import pprint
 
@@ -76,9 +79,67 @@ def load_class_from_package(package_dir:str, full_class_name:str):
     sys.path.pop(0)
   return cls
 
+import math
+class BatchIterator:
+  def __init__(self, 
+               all_examples:List[Any],
+               batch_size:int,
+               batch_collate_fn:callable=None) -> None:
+
+    self._all_batches = []
+    self._batch_size = batch_size
+    self._num_batches = math.ceil(len(all_examples) / batch_size)
+    self._cur_batch_index = 0
+    self._batch_collate_fn = batch_collate_fn if batch_collate_fn else lambda x : x # identity function by default.
+
+    for i in range(0, len(all_examples), batch_size):
+      self._all_batches.append(all_examples[i : i + batch_size])
+  
+  def __iter__(self) -> Iterator[List[Any]]:
+    return self
+
+  def __next__(self) -> Any:
+    if self._cur_batch_index >= self._num_batches:
+      self._cur_batch_index  = 0
+      raise StopIteration()
+    else:
+      batch  = self._all_batches[self._cur_batch_index]
+      self._cur_batch_index  +=1
+      return self._batch_collate_fn(batch)
+  
+  def __len__(self) -> int:
+    return self._num_batches
+
+def batch_collate_fn_chatglm1(example_batch:List[Any])->Tuple[Any, Any]:
+  """
+  Convert a list of examples into a tuple (text_array, answer_array) for chatglm 6b model
+  """
+  text_array, answer_array = [],[]
+  for example in example_batch:
+    text_array.append(example["text"])
+    answer_array.append(example["answer"])
+  return text_array, answer_array
+
+def batch_collate_fn_chatglm2(example_batch:List[Any])->Tuple[Any, Any]:
+  """
+  Convert a list of examples into a tuple (text_array, answer_array) for chatglm2 6b model
+  """
+  text_array, answer_array = [], []
+  for example in example_batch:
+    text_array.append("[Round {}]\n\n问：{}\n\n答：".format(1, example["text"]))
+    answer_array.append(example["answer"])
+  return text_array, answer_array
 
 if __name__ == "__main__":
-  cls = load_class_from_package("/data/xuanhua/chatglm2-finetuned-models/output_freeze/global_step_449", 
-                          "modeling_chatglm.ChatGLMForConditionalGeneration")
-  print(f"{cls}")
-  print("Done")
+  #cls = load_class_from_package("/data/xuanhua/chatglm2-finetuned-models/output_freeze/global_step_449", 
+  #                        "modeling_chatglm.ChatGLMForConditionalGeneration")
+  #print(f"{cls}")
+  #print("Done")
+
+  iter = BatchIterator([1,2,3,4,5], 2)
+  for batch in iter:
+    print(f"Batch: {batch}")
+
+  iter = BatchIterator([{"text": "Hello", "answer":"Hi"}, {"text": "How are you?", "answer":"I'm fine"}], 3, batch_collate_fn)
+  for batch in iter:
+    print(f"Batch: {batch}")

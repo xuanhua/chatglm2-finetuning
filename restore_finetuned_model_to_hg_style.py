@@ -60,6 +60,7 @@ du -b pytorch_model-0000* | awk '{sum+=$1} END {print sum}'
 ```
 
 So currently, we still decide to use the new generated pytorch_model.bin.index.json for the fine-tuned model.
+(Note: "total_size" for the fine-tuned model is smaller, this might be a bug in deepspeed. By counting tatal bytes of 'pytorch_model-000*', the original and fine-tuned model have the same size.)
 
 3. generation_config.json
 It seems does not save unique and important information, just ignore it now.

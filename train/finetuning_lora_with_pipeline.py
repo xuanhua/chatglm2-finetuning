@@ -45,20 +45,23 @@ def print_rank_0(msg, rank=0):
         print(msg)
 
 
-def get_masks(input_ids, device):
-    batch_size, seq_length = input_ids.shape
-    context_lengths = [seq.tolist().index(150004) for seq in input_ids]
-    attention_mask = torch.ones((batch_size, seq_length, seq_length), device=device)
-    attention_mask.tril_()
-    for i, context_length in enumerate(context_lengths):
-        attention_mask[i, :, :context_length] = 1
-    attention_mask.unsqueeze_(1)
-    attention_mask = (attention_mask < 0.5).bool()
-    return attention_mask
+# There is no need for get_masks in finetuning of chatglm2_6b
+#def get_masks(input_ids, device):
+#    batch_size, seq_length = input_ids.shape
+#    # Here 150004 is the bos_token_id, check configuration_chatglm.py of chatglm_6b project.
+#    context_lengths = [seq.tolist().index(150004) for seq in input_ids]
+#    attention_mask = torch.ones((batch_size, seq_length, seq_length), device=device)
+#    attention_mask.tril_()
+#    for i, context_length in enumerate(context_lengths):
+#        attention_mask[i, :, :context_length] = 1
+#    attention_mask.unsqueeze_(1)
+#    attention_mask = (attention_mask < 0.5).bool()
+#    return attention_mask
 
 
 def get_position_ids(input_ids, mask_positions, device):
     batch_size, seq_length = input_ids.shape
+    # Here 150004 is the bos_token_id, check configuration_chatglm.py of chatglm_6b project.
     context_lengths = [seq.tolist().index(150004) for seq in input_ids]
     position_ids = torch.arange(seq_length, dtype=torch.long, device=device).unsqueeze(0).repeat(batch_size, 1)
     for i, context_length in enumerate(context_lengths):
@@ -77,18 +80,21 @@ class EmbeddingPipeLayer(torch.nn.Module):
         super().__init__()
         self.word_embeddings = model.transformer.word_embeddings
         self.weight = self.word_embeddings.weight
+        self.rotary_pos_emb = model.transformer.rotary_pos_emb
 
     def forward(self, ipt):
         input_ids, labels = ipt
         hidden_states = self.word_embeddings(input_ids)
-        mask_token = 150001
-        seqs = input_ids.tolist()
-        mask_positions = [seq.index(mask_token) for seq in seqs]
-        attention_mask = get_masks(input_ids, device=input_ids.device)
-        position_ids = get_position_ids(input_ids, device=input_ids.device, mask_positions=mask_positions)
-        hidden_states = hidden_states.transpose(0, 1).contiguous()
-        return hidden_states, position_ids, attention_mask, labels
 
+        # TODO: suppose input_ids is in shape [b, s, h], where b is batch size, s is sequence length and h is hidden size
+        seq_len = input_ids.size(1)
+
+        rotary_pos_emb = self.rotary_pos_emb(seq_len)[None, :seq_len]
+        rotary_pos_emb = rotary_pos_emb.transpose(0,1).contiguous()
+
+        # TODO: hidden_states might need to be transposed 
+        #hidden_states = hidden_states.transpose(0, 1).contiguous()
+        return hidden_states, rotary_pos_emb, labels
 
 class GLMBlockPipeLayer(torch.nn.Module):
     def __init__(self, model: ChatGLMForConditionalGeneration, layer_idx):
@@ -97,11 +103,16 @@ class GLMBlockPipeLayer(torch.nn.Module):
         self.layer_idx = torch.tensor(layer_idx)
 
     def forward(self, ipt):
-        hidden_states, position_ids, attention_mask, labels = ipt
-        hidden_states = self.layer(hidden_states, position_ids, attention_mask, torch.tensor(self.layer_idx))[0]
-        return hidden_states, position_ids, attention_mask, labels
+        hidden_states, rotary_pos_emb, labels = ipt
+        layer_ret = self.layer(hidden_states, 
+                                   attention_mask=None,
+                                   rotary_pos_emb=rotary_pos_emb,
+                                   kv_cache=None,
+                                   use_cache=True)
+        hidden_states, _ = layer_ret
+        return hidden_states, rotary_pos_emb, labels
 
-
+# TODO: start from here
 class FLNPipeLayer(torch.nn.Module):
     def __init__(self, model: ChatGLMForConditionalGeneration):
         super().__init__()
@@ -172,82 +183,6 @@ def set_args():
                              "And this argument is optional")
     parser = deepspeed.add_config_arguments(parser)
     return parser.parse_args()
-
-
-class GLMPromptDataSet(Dataset):
-    def __init__(self, data_path, tokenizer, max_len, max_src_len, is_skip):
-        #prompt_text = "你现在是一个信息抽取模型，请你帮我抽取出关系内容为\"性能故障\", \"部件故障\", \"组成\"和 \"检测工具\"的相关三元组，三元组内部用\"_\"连接，三元组之间用\\n分割。文本："
-        prompt_text = "你现在是一个行程预定助理，你从用户和机器人的对话中，总结并生成Json结构的回复内容，包括‘行程’以及‘回复’ 两个部分。行程中会包括机票、火车票、酒店、用车等预定要求；下面是用户和机器人的对话："
-        self.all_data = []
-        skip_data_number = 0
-        with open(data_path, "r", encoding="utf-8") as fh:
-            for i, line in enumerate(fh):
-                sample = json.loads(line.strip())
-                skip_flag = False
-                prompt_tokens = tokenizer.tokenize(prompt_text)
-                src_tokens = tokenizer.tokenize(sample["text"])
-                src_tokens = prompt_tokens + src_tokens
-
-                if len(src_tokens) > max_src_len:
-                    src_tokens = src_tokens[:max_src_len]
-                    skip_flag = True
-
-                max_tgt_len = max_len - 3 - len(src_tokens)
-                tgt_tokens = tokenizer.tokenize(sample["answer"])
-
-                if len(tgt_tokens) > max_tgt_len:
-                    tgt_tokens = tgt_tokens[:max_tgt_len]
-                    skip_flag = True
-
-                tokens = src_tokens + ["[gMASK]", "<sop>"] + tgt_tokens + ["<eop>"]
-                assert len(tokens) <= max_len
-
-                input_ids = tokenizer.convert_tokens_to_ids(tokens)
-                context_length = input_ids.index(tokenizer.bos_token_id)
-                mask_position = context_length - 1
-                labels = [-100] * context_length + input_ids[mask_position + 1:]
-
-                pad_len = max_len - len(input_ids)
-                input_ids = input_ids + [tokenizer.pad_token_id] * pad_len
-                labels = labels + [-100] * pad_len
-
-                assert len(input_ids) == len(labels)
-                assert len(input_ids) == max_len
-                if is_skip and skip_flag:
-                    skip_data_number += 1
-                    continue
-                self.all_data.append(
-                    {"input_ids": torch.LongTensor(input_ids), "labels": torch.LongTensor(labels)})
-        print("the number of skipping data is {}, the proportion is {}".format(skip_data_number, skip_data_number / (
-                len(self.all_data) + skip_data_number)))
-
-    def __len__(self):
-        return len(self.all_data)
-
-    def __getitem__(self, item):
-        instance = self.all_data[item]
-        return instance
-
-
-class DataCollatorForPromptDataset(object):
-    """Collate for supervised fine-tuning."""
-
-    def __call__(self, samples):
-        input_ids_list, labels_list = [], []
-        for instance in samples:
-            input_ids_list.append(instance["input_ids"])
-            labels_list.append(instance["labels"])
-        return ((torch.stack(input_ids_list), torch.stack(labels_list)), torch.stack(labels_list))
-
-
-def collect_fn_glm(batch):
-    input_ids_list, labels_list = [], []
-    for instance in batch:
-        input_ids_list.append(instance["input_ids"])
-        labels_list.append(instance["labels"])
-    return ((pad_sequence(input_ids_list, batch_first=True), pad_sequence(labels_list, batch_first=True)),
-            pad_sequence(labels_list, batch_first=True))
-
 
 def main():
     args = set_args()

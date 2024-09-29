@@ -24,7 +24,8 @@ from peft import LoraConfig, get_peft_model
 from config import CHATGLM_6B_V2_BASE_MODEL_PATH
 from data_set import (
     GLMPromptDataSet,
-    DataCollatorForPromptDataset
+    DataCollatorForPromptDataset,
+    DataCollatorForDeepspeedPipelineModel
 )
 
 try:
@@ -81,17 +82,27 @@ class EmbeddingPipeLayer(torch.nn.Module):
         self.rotary_pos_emb = model.transformer.rotary_pos_emb
 
     def forward(self, ipt):
+        """
+        Args:
+            ipt (Tuple[torch.Tensor]): A input tuple, that includes `input_ids` and `labels`.
+        
+        Some terminologies:
+            b: batch size
+            s: sequence length
+            h: hidden size
+        """
         input_ids, labels = ipt
         hidden_states = self.word_embeddings(input_ids)
 
-        # TODO: suppose input_ids is in shape [b, s, h], where b is batch size, s is sequence length and h is hidden size
+        # input_ids is in shape [b, s], where b is batch size, s is sequence length and h is hidden size
         seq_len = input_ids.size(1)
 
         rotary_pos_emb = self.rotary_pos_emb(seq_len)[None, :seq_len]
+        # rotary_pos_emb is in shape [s, b, 32, 2]
         rotary_pos_emb = rotary_pos_emb.transpose(0,1).contiguous()
 
-        # TODO: hidden_states might need to be transposed 
-        #hidden_states = hidden_states.transpose(0, 1).contiguous()
+        # hidden_states is in shape [s, b, h]
+        hidden_states = hidden_states.transpose(0, 1).contiguous()
         return hidden_states, rotary_pos_emb, labels
 
 class GLMBlockPipeLayer(torch.nn.Module):
@@ -129,10 +140,11 @@ class LMPipeLayer(torch.nn.Module):
         self.output_layer = model.transformer.output_layer
 
     def forward(self, ipt):
+        # hidden_states: [s, b, h]
         hidden_states, labels = ipt
 
         # Did the same thing as in chatglm2_6b/modeling_chatglm.py line 951: hidden_states = transformer_outputs[0]
-        hidden_states = hidden_states[0]
+        #hidden_states = hidden_states[0]
 
         lm_logits = self.output_layer(hidden_states)
         lm_logits = lm_logits.transpose(0,1).contiguous()
@@ -272,7 +284,7 @@ def main():
     train_dataloader = DataLoader(train_dataset,
                                   batch_size=ds_config["train_micro_batch_size_per_gpu"],
                                   sampler=RandomSampler(train_dataset),
-                                  collate_fn=DataCollatorForPromptDataset(),
+                                  collate_fn=DataCollatorForDeepspeedPipelineModel(),
                                   drop_last=True,
                                   num_workers=0)
 
@@ -295,7 +307,10 @@ def main():
     print(num_update_steps_per_epoch)
 
     train_dataloader = iter(deepspeed.utils.RepeatingLoader(train_dataloader))
-    engine, _, _, _ = deepspeed.initialize(model=model_pipe, config=ds_config, model_parameters=model_pipe.parameters())
+    engine, _, _, _ = deepspeed.initialize(model=model_pipe, 
+                                           config=ds_config,
+                                           model_parameters=model_pipe.parameters(),
+                                           training_data=train_dataset)
 
     # tag that is used to load/save checkpoints
     tag_num = 0

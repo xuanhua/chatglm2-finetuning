@@ -97,6 +97,26 @@ class DataCollatorForPromptDataset(object):
             "labels": pad_sequence(labels_list, batch_first=True, padding_value=-100)
         }
 
+class DataCollatorForDeepspeedPipelineModel(object):
+    """Collate for deepspeed pipeline based model
+
+    This collate function looks wierd because it's designed to work with DeepSpeed pipeline parallelism. 
+    For different stags, it might require different input.
+
+    In this collate function, it prepares inputs for both first and last stage of pipeline model:
+    - For the first stage (stage 0), it only needs `input_ids` and `label` as inputs.
+    - For the last stage (stage N-1), it needs `label`.
+
+    So the output of this collate function includes required inputs for both kinds of stages in pipeline model.
+    (The stage number is equal the number of used GPUs in usual)
+    """
+    def __call__(self, samples):
+        input_ids_list, labels_list = [], []
+        for instance in samples:
+            input_ids_list.append(instance["input_ids"])
+            labels_list.append(instance["labels"])
+        return ((torch.stack(input_ids_list), torch.stack(labels_list)), torch.stack(labels_list))
+
 if __name__ == "__main__":
     # test the dataset and collator
     pass

@@ -9,22 +9,23 @@ import torch
 from chatglm2_6b.modeling_chatglm import ChatGLMForConditionalGeneration
 from chatglm2_6b.tokenization_chatglm import ChatGLMTokenizer
 
-from deepspeed.pipe import PipelineModule, TiedLayerSpec, LayerSpec
+from deepspeed.pipe import PipelineModule, LayerSpec
 from torch.nn import CrossEntropyLoss
 import deepspeed
 import argparse
 import math
-import json
 import time
-from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
-from transformers import SchedulerType, default_data_collator, get_scheduler
-from torch.utils.data import Dataset
+from torch.utils.data import RandomSampler
 import random
 import numpy as np
 from peft import LoraConfig, get_peft_model
 
 from config import CHATGLM_6B_V2_BASE_MODEL_PATH
+from data_set import (
+    GLMPromptDataSet,
+    DataCollatorForPromptDataset
+)
 
 try:
     from torch.utils.tensorboard import SummaryWriter
@@ -44,7 +45,6 @@ def print_rank_0(msg, rank=0):
     if rank <= 0:
         print(msg)
 
-
 # There is no need for get_masks in finetuning of chatglm2_6b
 #def get_masks(input_ids, device):
 #    batch_size, seq_length = input_ids.shape
@@ -58,27 +58,25 @@ def print_rank_0(msg, rank=0):
 #    attention_mask = (attention_mask < 0.5).bool()
 #    return attention_mask
 
-
-def get_position_ids(input_ids, mask_positions, device):
-    batch_size, seq_length = input_ids.shape
-    # Here 150004 is the bos_token_id, check configuration_chatglm.py of chatglm_6b project.
-    context_lengths = [seq.tolist().index(150004) for seq in input_ids]
-    position_ids = torch.arange(seq_length, dtype=torch.long, device=device).unsqueeze(0).repeat(batch_size, 1)
-    for i, context_length in enumerate(context_lengths):
-        position_ids[i, context_length:] = mask_positions[i]
-    block_position_ids = [torch.cat((torch.zeros(context_length, dtype=torch.long, device=device),
-                                     torch.arange(seq_length - context_length, dtype=torch.long,
-                                                  device=device) + 1
-                                     )) for context_length in context_lengths]
-    block_position_ids = torch.stack(block_position_ids, dim=0)
-    position_ids = torch.stack((position_ids, block_position_ids), dim=1)
-    return position_ids
-
+#def get_position_ids(input_ids, mask_positions, device):
+#    batch_size, seq_length = input_ids.shape
+#    # Here 150004 is the bos_token_id, check configuration_chatglm.py of chatglm_6b project.
+#    context_lengths = [seq.tolist().index(150004) for seq in input_ids]
+#    position_ids = torch.arange(seq_length, dtype=torch.long, device=device).unsqueeze(0).repeat(batch_size, 1)
+#    for i, context_length in enumerate(context_lengths):
+#        position_ids[i, context_length:] = mask_positions[i]
+#    block_position_ids = [torch.cat((torch.zeros(context_length, dtype=torch.long, device=device),
+#                                     torch.arange(seq_length - context_length, dtype=torch.long,
+#                                                  device=device) + 1
+#                                     )) for context_length in context_lengths]
+#    block_position_ids = torch.stack(block_position_ids, dim=0)
+#    position_ids = torch.stack((position_ids, block_position_ids), dim=1)
+#    return position_ids
 
 class EmbeddingPipeLayer(torch.nn.Module):
     def __init__(self, model: ChatGLMForConditionalGeneration):
         super().__init__()
-        self.word_embeddings = model.transformer.word_embeddings
+        self.word_embeddings = model.transformer.embedding.word_embeddings
         self.weight = self.word_embeddings.weight
         self.rotary_pos_emb = model.transformer.rotary_pos_emb
 
@@ -99,7 +97,7 @@ class EmbeddingPipeLayer(torch.nn.Module):
 class GLMBlockPipeLayer(torch.nn.Module):
     def __init__(self, model: ChatGLMForConditionalGeneration, layer_idx):
         super().__init__()
-        self.layer = model.transformer.layers[layer_idx]
+        self.layer = model.transformer.encoder.layers[layer_idx]
         self.layer_idx = torch.tensor(layer_idx)
 
     def forward(self, ipt):
@@ -112,30 +110,34 @@ class GLMBlockPipeLayer(torch.nn.Module):
         hidden_states, _ = layer_ret
         return hidden_states, rotary_pos_emb, labels
 
-# TODO: start from here
 class FLNPipeLayer(torch.nn.Module):
     def __init__(self, model: ChatGLMForConditionalGeneration):
         super().__init__()
-        self.final_layernorm = model.transformer.final_layernorm
+        self.final_layernorm = model.transformer.encoder.final_layernorm
 
     def forward(self, ipt):
-        hidden_states, position_ids, attention_mask, labels = ipt
+        hidden_states, rotary_pos_emb, labels = ipt
         hidden_states = self.final_layernorm(hidden_states)
         return hidden_states, labels
 
-
 class LMPipeLayer(torch.nn.Module):
+    """
+    Layers that transform hidden states to logits for the language modeling task.
+    """
     def __init__(self, model: ChatGLMForConditionalGeneration):
         super().__init__()
-        self.word_embeddings = model.transformer.word_embeddings
-        self.weight = self.word_embeddings.weight
+        self.output_layer = model.transformer.output_layer
 
     def forward(self, ipt):
         hidden_states, labels = ipt
-        logits = torch.nn.functional.linear(hidden_states, self.word_embeddings.weight)
-        logits = logits.permute(1, 0, 2).contiguous()
-        return logits, labels
 
+        # Did the same thing as in chatglm2_6b/modeling_chatglm.py line 951: hidden_states = transformer_outputs[0]
+        hidden_states = hidden_states[0]
+
+        lm_logits = self.output_layer(hidden_states)
+        lm_logits = lm_logits.transpose(0,1).contiguous()
+
+        return lm_logits, labels
 
 class LossPipeLayer(torch.nn.Module):
     def __init__(self, model: ChatGLMForConditionalGeneration):
@@ -145,25 +147,26 @@ class LossPipeLayer(torch.nn.Module):
         logits, labels = ipt
         shift_logits = logits[..., :-1, :].contiguous()
         shift_labels = labels[..., 1:].contiguous()
-        loss_fct = CrossEntropyLoss()
-        loss = loss_fct(shift_logits.reshape(-1, shift_logits.size(-1)), shift_labels.reshape(-1))
+        loss_fct = CrossEntropyLoss(ignore_index=-100)
+        loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), 
+                        shift_labels.view(-1))
         return loss
 
-
 def get_model(model):
-    layers = [TiedLayerSpec("word_embeddings", EmbeddingPipeLayer, model=model),
-              *[LayerSpec(GLMBlockPipeLayer, model=model, layer_idx=idx) for idx in
+    layers = [
+        LayerSpec(EmbeddingPipeLayer, model=model),
+        *[LayerSpec(GLMBlockPipeLayer, model=model, layer_idx=idx) for idx in
                 range(model.config.num_layers)],
-              LayerSpec(FLNPipeLayer, model=model),
-              TiedLayerSpec("word_embeddings", LMPipeLayer, model=model),
-              LayerSpec(LossPipeLayer, model=model)]
+        LayerSpec(FLNPipeLayer, model=model),
+        LayerSpec(LMPipeLayer, model=model),
+        LayerSpec(LossPipeLayer, model=model)
+    ]
     return layers
-
 
 def set_args():
     parser = argparse.ArgumentParser(description="")
     parser.add_argument("--train_path", default="data/tb_0.json", type=str, help="")
-    parser.add_argument("--model_name_or_path", default=CHATGLM_6B_V2_BASE_MODEL_PATH, type=str, help="", required=True)
+    parser.add_argument("--model_name_or_path", default=CHATGLM_6B_V2_BASE_MODEL_PATH, type=str, help="")
     parser.add_argument("--per_device_train_batch_size", type=int, default=2, help="")
 
     parser.add_argument("--max_len", type=int, default=2048, help="")
@@ -232,12 +235,12 @@ def main():
 
     tokenizer = ChatGLMTokenizer.from_pretrained(args.model_name_or_path)
 
-    print_rank_0("tokenizer.pad_token: {}".format(tokenizer.pad_token), args.global_rank)
-    print_rank_0("tokenizer.eos_token: {}".format(tokenizer.eos_token), args.global_rank)
-    print_rank_0("tokenizer.bos_token_id: {}".format(tokenizer.bos_token_id), args.global_rank)
-    print_rank_0("tokenizer.bos_token: {}".format(tokenizer.bos_token), args.global_rank)
-    print_rank_0("tokenizer.eop_token_id: {}".format(tokenizer.eop_token_id), args.global_rank)
-    print_rank_0("tokenizer.eop_token: {}".format(tokenizer.eop_token), args.global_rank)
+    #print_rank_0("tokenizer.pad_token: {}".format(tokenizer.pad_token), args.global_rank)
+    #print_rank_0("tokenizer.eos_token: {}".format(tokenizer.eos_token), args.global_rank)
+    #print_rank_0("tokenizer.bos_token_id: {}".format(tokenizer.bos_token_id), args.global_rank)
+    #print_rank_0("tokenizer.bos_token: {}".format(tokenizer.bos_token), args.global_rank)
+    #print_rank_0("tokenizer.eop_token_id: {}".format(tokenizer.eop_token_id), args.global_rank)
+    #print_rank_0("tokenizer.eop_token: {}".format(tokenizer.eop_token), args.global_rank)
 
     model = ChatGLMForConditionalGeneration.from_pretrained(args.model_name_or_path)
     model.gradient_checkpointing_enable()
@@ -259,16 +262,30 @@ def main():
 
     model_pipe.to(device).half()
 
-    train_dataset = GLMPromptDataSet(args.train_path, tokenizer, args.max_len, args.max_src_len, args.is_skip)
-    data_collator = DataCollatorForPromptDataset()
-
-    g = torch.Generator()
+    train_dataset = GLMPromptDataSet(data_path=args.train_path,
+                                     tokenizer=tokenizer,
+                                     max_len = args.max_len,
+                                     max_src_len= args.max_src_len,
+                                     skip_overlength_example=True,
+                                     ignore_pad_token_for_loss=True
+                                    )
     train_dataloader = DataLoader(train_dataset,
-                                  collate_fn=data_collator,
-                                  shuffle=True,
+                                  batch_size=ds_config["train_micro_batch_size_per_gpu"],
+                                  sampler=RandomSampler(train_dataset),
+                                  collate_fn=DataCollatorForPromptDataset(),
                                   drop_last=True,
-                                  batch_size=args.per_device_train_batch_size,
-                                  generator=g)
+                                  num_workers=0)
+
+    #train_dataset = GLMPromptDataSet(args.train_path, tokenizer, args.max_len, args.max_src_len, args.is_skip)
+    #data_collator = DataCollatorForPromptDataset()
+
+    #g = torch.Generator()
+    #train_dataloader = DataLoader(train_dataset,
+    #                              collate_fn=data_collator,
+    #                              shuffle=True,
+    #                              drop_last=True,
+    #                              batch_size=args.per_device_train_batch_size,
+    #                              generator=g)
 
     print_rank_0("len(train_dataloader) = {}".format(len(train_dataloader)), args.global_rank)
     print_rank_0("len(train_dataset) = {}".format(len(train_dataset)), args.global_rank)
@@ -291,8 +308,8 @@ def main():
         ckpt_dir = os.path.dirname(ckpt_started_from)
         engine.load_checkpoint(load_dir=ckpt_dir, tag=tag)
 
-    start = time.time()
     all_loss = 0.0
+    start = time.time()
     for step in range(args.num_train_epochs * num_update_steps_per_epoch):
         loss = engine.train_batch(data_iter=train_dataloader)
         print_rank_0("step = {}, loss = {}".format(step, loss.item()), args.global_rank)

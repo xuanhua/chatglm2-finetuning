@@ -124,6 +124,27 @@
       "justMyCode": false
     },
     {
+      "name": "deepspeed dump lora adapter from pipelinemodule",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "/home/ubuntu/anaconda3/bin/deepspeed",
+      "cwd": "${workspaceFolder}",
+      "args": [
+        "--master_port",
+        "5524",
+        "${workspaceFolder}/save_lora_adapter_from_pipelinemodule.py",
+        "--checkpoint_path",
+        "/data/xuanhua/chatglm2-finetuned-models/output_dir_pipeline/global_step4500",
+        "--num_stages",
+        "1"
+      ],
+      "env": {
+        "CUDA_VISIBLE_DEVICES":"0"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
       "name": "debug utils.py",
       "type": "debugpy",
       "request": "launch",

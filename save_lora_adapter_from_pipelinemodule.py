@@ -4,17 +4,21 @@ from chatglm2_6b.modeling_chatglm import ChatGLMForConditionalGeneration
 from deepspeed.pipe import PipelineModule
 import deepspeed
 from peft import LoraConfig, get_peft_model
-#/home/ubuntu/anaconda3/lib/python3.9/site-packages/peft/peft_model.py
+
+# Following imported model coming from file: /home/ubuntu/anaconda3/lib/python3.9/site-packages/peft/peft_model.py
 from peft.peft_model import PeftModel
 from peft.tuners.lora import LoraModel
 from peft.utils.save_and_load import get_peft_model_state_dict
+
 import random
 import numpy as np
 import torch
-from config import CHATGLM_6B_V1_MODEL_PATH
-from config import CHATGLM_6B_V1_LORA_MODEL_PATH
+
+from config import CHATGLM_6B_V2_BASE_MODEL_PATH
+
 import argparse
 import os
+import sys
 
 from typing import List, Dict, Tuple, Union, Optional
 import re
@@ -89,10 +93,25 @@ def set_random_seed(seed: int):
 
 def set_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--orig_model_name_or_path", default=CHATGLM_6B_V1_MODEL_PATH, type=str, help="", required=False)
-    parser.add_argument("--checkpoint_path", default=CHATGLM_6B_V1_LORA_MODEL_PATH, type=str, help="", required=False)
-    parser.add_argument("--num_stages", default=2, type=int, help="", required=False)
-    parser.add_argument("--local_rank", type=int, default=-1, help="")
+    parser.add_argument("--orig_model_name_or_path", 
+                        default=CHATGLM_6B_V2_BASE_MODEL_PATH, 
+                        type=str,
+                        help="Directory to original huggingface pretrained model",
+                        required=False)
+    parser.add_argument("--checkpoint_path",
+                        default="",
+                        type=str,
+                        help="Diretory where save the checkpoint of fine-tuned model",
+                        required=True)
+    parser.add_argument("--num_stages",
+                        default=1,
+                        type=int,
+                        help="",
+                        required=False)
+    parser.add_argument("--local_rank",
+                        type=int,
+                        default=-1,
+                        help="")
     return parser.parse_args()
 
 def dummy_ds_config():
@@ -151,18 +170,21 @@ def dump_lora_adapter_model_from_pipelinemodule(args):
     ```
     """
     if args.local_rank == -1:
-        device = torch.device("cuda")
+        device = torch.device("cpu")
     else:
         torch.cuda.set_device(args.local_rank)
-        device = torch.device("cuda", args.local_rank)
-        deepspeed.init_distributed(dist_backend="nccl")
+        device = torch.device("cpu", args.local_rank)
+        deepspeed.init_distributed(dist_backend="gloo")
 
     args.global_rank = torch.distributed.get_rank()
 
-    seed = 1234
-    set_random_seed(seed)
-    #tokenizer =  ChatGLMTokenizer.from_pretrained(args.orig_model_name_or_path, 
-    #                                              trust_remote_code=True)
+    # This only work when env variable CUDA_VISIBLE_DEVICES is set to indicate only one GPU is available
+    # otherwise there could be hang
+    if args.global_rank != 0:
+        print(f"Rank {args.global_rank} does not participate this these jobs, just exit with 0")
+        sys.exit(0)
+
+    set_random_seed(1234)
     model = ChatGLMForConditionalGeneration.from_pretrained(args.orig_model_name_or_path)
 
     lora_config = LoraConfig(r=8,
@@ -183,19 +205,7 @@ def dump_lora_adapter_model_from_pipelinemodule(args):
 
     model_pipe = PipelineModule(layers=layers, 
                                 num_stages=args.num_stages)
-    #model_pipe.to(device).half()
-        
     engine, _, _, _ = deepspeed.initialize(model=model_pipe, config=dummy_ds_config(), model_parameters=model_pipe.parameters())
-
-    ## As required by function get_peft_model_state_dict(), the model must have a 'peft_config' attribute. If not, we add it.
-    ## This is a tricky way to pickup the peft model state_dict from a PipelineModule object.
-    #if not hasattr(model, "peft_config"):
-    #    setattr(model, "peft_config", peft_model.peft_config)
-    #if not hasattr(model, "modules_to_save"):
-    #    setattr(model, "modules_to_save", peft_model.modules_to_save)
-    ##peft_model_state_dict = get_peft_model_state_dict(model=peft_model, state_dict=None)
-    #peft_model_state_dict = get_peft_model_state_dict(model=model, state_dict=None)
-    #peft_model.save_pretrained(os.path.join(".", "peft_adapter_model_saved_dir"), state_dict=peft_model_state_dict)
 
     # TODO: the complete solution should be:
     # 1. Compose an peft model from huggingface's transformer model
@@ -222,4 +232,6 @@ def dump_lora_adapter_model_from_pipelinemodule(args):
 
 if __name__ == "__main__":
     args = set_args()
+    if not os.path.isdir(args.checkpoint_path):
+        raise FileNotFoundError(f"Checkpoint directory: {args.checkpoint_path} does not exist")
     dump_lora_adapter_model_from_pipelinemodule(args)

@@ -168,21 +168,20 @@ def dump_lora_adapter_model_from_pipelinemodule(args):
        --num_stages \
        1
     ```
+    This function looks like complicated, the checkpoint loading logic of Pipeline model could only be reached
+    after initializing the PipelineEngine, which depends on the initialization of distributed backend like nccl,
+    gloo, mpi and so on.
+
+    We might implement a customized loading logic later.
     """
     if args.local_rank == -1:
-        device = torch.device("cpu")
+        device = torch.device("cuda")
     else:
         torch.cuda.set_device(args.local_rank)
-        device = torch.device("cpu", args.local_rank)
-        deepspeed.init_distributed(dist_backend="gloo")
+        device = torch.device("cuda", args.local_rank)
+        deepspeed.init_distributed(dist_backend="nccl")
 
     args.global_rank = torch.distributed.get_rank()
-
-    # This only work when env variable CUDA_VISIBLE_DEVICES is set to indicate only one GPU is available
-    # otherwise there could be hang
-    if args.global_rank != 0:
-        print(f"Rank {args.global_rank} does not participate this these jobs, just exit with 0")
-        sys.exit(0)
 
     set_random_seed(1234)
     model = ChatGLMForConditionalGeneration.from_pretrained(args.orig_model_name_or_path)

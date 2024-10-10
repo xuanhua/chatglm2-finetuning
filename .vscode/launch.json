@@ -127,7 +127,7 @@
       "name": "deepspeed dump lora adapter from pipelinemodule",
       "type": "debugpy",
       "request": "launch",
-      "program": "/home/ubuntu/anaconda3/bin/deepspeed",
+      "program": "/home/ubuntu/anaconda3/bin/deepspeed", // The pipeline based model training relies on deepspeed's lauching mode, it doesnot work without distributed backend.
       "cwd": "${workspaceFolder}",
       "args": [
         "--master_port",

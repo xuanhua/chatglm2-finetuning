@@ -124,6 +124,22 @@
       "justMyCode": false
     },
     {
+      "name": "debug merge_lora_adapter_to_hg_model.py",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/merge_lora_adapter_to_hg_model.py",
+      "cwd": "${workspaceFolder}",
+      "args": [
+        "--checkpoint_path",
+        "/data/xuanhua/chatglm2-finetuned-models/output_dir_pipeline/global_step4500",
+        "--merged_model_path",
+        "/data/xuanhua/chatglm2-finetuned-models/output_dir_pipeline/lora_merged_global_step4500"
+      ],
+      "console": "integratedTerminal",
+      "justMyCode": false
+    }
+
+    {
       "name": "deepspeed dump lora adapter from pipelinemodule",
       "type": "debugpy",
       "request": "launch",

@@ -27,5 +27,14 @@ This part takes several steps before reaching the real forwarding process. Here 
 
 **Why doing so much model transformation**
 
+There are two purposes:
 * Try to use existing tools maximumly. But there is a single tool can do all of these things.
 * The most important thing is to make fine-tuned model could be inferenced on third-party inference engine directly like vllm.
+
+**Publish the fine-tuned pipeline based lora model**
+
+4 steps needed:
+* Train/finetune the model (pipeline based model) 
+* Extract lora adapter from pipeline based model and save it to disk
+* Load original huggingface pretrained model and apply the lora adapter, merge the adapter into the model and save it to disk.
+* Copy various *.py and *.json files to the new model directory to create the complete huggingface style model.

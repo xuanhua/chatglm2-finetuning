@@ -134,8 +134,8 @@ def cp_hg_model_required_files(args:argparse.Namespace):
 
 def set_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--hg-model-path", default=CHATGLM_6B_V2_BASE_MODEL_PATH, type=str, help="", required=False)
-    parser.add_argument("--finetuned-model-path", default="", type=str, help="fine-tuned model directory path", required=True)
+    parser.add_argument("--hg-model-path", default=CHATGLM_6B_V2_BASE_MODEL_PATH, type=str, help=f"Untouched officially released huggingface model's directory, its default value is '{CHATGLM_6B_V2_BASE_MODEL_PATH}'", required=False)
+    parser.add_argument("--finetuned-model-path", default="", type=str, help="Fine-tuned model directory path", required=True)
     return parser.parse_args()
 
 if __name__ == "__main__":

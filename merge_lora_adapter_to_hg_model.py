@@ -22,7 +22,7 @@ def set_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--orig_model_name_or_path", default=CHATGLM_6B_V2_BASE_MODEL_PATH, type=str, help="", required=False)
     parser.add_argument("--checkpoint_path", default="", type=str, help="directory where lora adapter models resides", required=True)
-    parser.add_argument("--merged_model_path", default="/tmp/test", type=str, help="directory that merged model saved to", required=False)
+    parser.add_argument("--merged_model_path", default="", type=str, help="directory that merged model saved to", required=True)
     return parser.parse_args()
 
 def save_lora_adapter_to_hg_model(args):

@@ -1,3 +1,6 @@
+## 2024-10-10
+
+Pipeline based lora model could be merged back to a huggingface style model.
 
 
 ## 2024-09-12

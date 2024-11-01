@@ -14,3 +14,5 @@ CHATGLM_6B_V2_BASE_MODEL_PATH="/data/xuanhua/hg_models/chatglm2_6b"
 CHATGLM_6B_V1_BASE_MODEL_PATH="/data/xuanhua/hg_models/chatglm_6b"
 
 MODEL_SAVED_HOME = "/data/xuanhua/chatglm2-finetuned-models/"
+
+DEEPSEEKCODER_1_3B_BASE_MODEL_PATH=""

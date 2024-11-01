@@ -72,6 +72,45 @@
       "justMyCode": false
     },
     {
+      "name": "debug deepseek coder pipeline based lora",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "/home/ubuntu/anaconda3/bin/deepspeed",
+      "cwd": "${workspaceFolder}",
+      "args": [
+        "--master_port",
+        "5524",
+        "${workspaceFolder}/train/finetuning_deepseek_coder_with_pipeline.py",
+        "--train_path",
+        "${workspaceFolder}/data/dsc_train.jsonl",
+        "--per_device_train_batch_size",
+        "1",
+        "--max_len",
+        "768",
+        "--max_src_len",
+        "450",
+        "--num_train_epochs",
+        "5",
+        "--gradient_accumulation_steps",
+        "1",
+        "--seed",
+        "1234",
+        "--show_loss_step",
+        "20",
+        "--num_stages",
+        "2",
+        "--save_model_step",
+        "300",
+        "--output_dir",
+        "/data/xuanhua/deepseek_coder_finetuned_models/output_dir_pipeline"
+      ],
+      "env": {
+        "CUDA_VISIBLE_DEVICES":"0,1"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": false
+    }
+    {
       "name": "debug pipeline based lora training",
       "type": "debugpy",
       "request": "launch",

@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 
-from torch.nn import CrossEntropyLoss
 import argparse
 
 import math
@@ -20,14 +19,6 @@ import deepspeed
 from deepspeed.pipe import (
     PipelineModule
 )
-
-#from transformers import LlamaForCausalLM
-#from transformers.models.llama.modeling_llama import (
-#    LlamaForCausalLM,
-#    LlamaConfig,
-#    LlamaDecoderLayer,
-#    LlamaRMSNorm,
-#)
 
 from torch.utils.data import (
     DataLoader,

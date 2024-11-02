@@ -109,7 +109,7 @@
       },
       "console": "integratedTerminal",
       "justMyCode": false
-    }
+    },
     {
       "name": "debug pipeline based lora training",
       "type": "debugpy",

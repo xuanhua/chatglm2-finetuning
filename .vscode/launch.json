@@ -16,7 +16,7 @@
       "justMyCode": false,
     },
     {
-      "name": "debug predict_pretrained.py",
+      "name": "predict_pretrained.py",
       "type": "debugpy",
       "request": "launch",
       "program": "${workspaceFolder}/inference/predict_pretrained.py",
@@ -35,7 +35,7 @@
       ]
     },
     {
-      "name": "debug predict_pretrained.py with finetuned model",
+      "name": "predict_pretrained.py with finetuned model",
       "type": "debugpy",
       "request": "launch",
       "program": "${workspaceFolder}/inference/predict_pretrained.py",
@@ -56,7 +56,7 @@
       ]
     },
     {
-      "name": "debug finetuning_freeze.py",
+      "name": "finetuning_freeze.py",
       "type": "debugpy",
       "request": "launch",
       "program": "/home/ubuntu/anaconda3/bin/deepspeed",
@@ -72,7 +72,7 @@
       "justMyCode": false
     },
     {
-      "name": "debug deepseek coder pipeline based lora",
+      "name": "deepseek coder pipeline based lora",
       "type": "debugpy",
       "request": "launch",
       "program": "/home/ubuntu/anaconda3/bin/deepspeed",
@@ -111,7 +111,7 @@
       "justMyCode": false
     },
     {
-      "name": "debug pipeline based lora training",
+      "name": "pipeline based lora training",
       "type": "debugpy",
       "request": "launch",
       "program": "/home/ubuntu/anaconda3/bin/deepspeed",
@@ -150,7 +150,7 @@
       "justMyCode": false
     },
     {
-      "name": "debug restore_finetuned_model_to_hg_style.py",
+      "name": "restore_finetuned_model_to_hg_style.py",
       "type": "debugpy",
       "request": "launch",
       "program": "${workspaceFolder}/restore_finetuned_model_to_hg_style.py",
@@ -163,7 +163,7 @@
       "justMyCode": false
     },
     {
-      "name": "debug merge_lora_adapter_to_hg_model.py",
+      "name": "merge_lora_adapter_to_hg_model.py",
       "type": "debugpy",
       "request": "launch",
       "program": "${workspaceFolder}/merge_lora_adapter_to_hg_model.py",
@@ -200,7 +200,7 @@
       "justMyCode": false
     },
     {
-      "name": "debug utils.py",
+      "name": "utils.py",
       "type": "debugpy",
       "request": "launch",
       "python": "/home/ubuntu/anaconda3/bin/python",

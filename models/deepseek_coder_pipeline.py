@@ -55,16 +55,7 @@ class LlamaPipeLayer(torch.nn.Module):
                  model: Union[ LlamaForCausalLM, PeftModelForCausalLM ], 
                  layer_idx: int):
         super().__init__()
-        if isinstance(model, LlamaForCausalLM):
-            self.layer = model.model.layers[layer_idx]
-        elif isinstance(model, PeftModelForCausalLM):
-            # Hierarchies from PeftModelForCasualLM to layers
-            # PeftModelForCasualLM
-            # |-->LoraModel
-            #     |-->LlamaForCasualLM
-            #         |-->LlamaModel
-            #             |-->layers
-            self.layer = model.base_model.model.model.layers[layer_idx]
+        self.layer = model.model.layers[layer_idx]
         self.gradient_checkpointing = model.model.gradient_checkpointing
 
     def forward(self, ipt):
@@ -148,12 +139,14 @@ class LossLayer(torch.nn.Module):
         return loss
 
 def get_pipeline_model(model: Union[LlamaForCausalLM, PeftModelForCausalLM]):
-    if isinstance(model, LlamaForCausalLM):
-        transformer_layers = model.model.layers
-    elif isinstance(model, PeftModelForCausalLM):
+    if isinstance(model, PeftModelForCausalLM):
         transformer_layers = model.base_model.model.model.layers
+        model = model.base_model.model
+    elif isinstance(model, LlamaForCausalLM):
+        transformer_layers = model.model.layers
     else:
         raise ValueError("Unsupported model type: ")
+    # In below logic, model should be an instance of LlamaForCausalLM
     layers = [
         LayerSpec(EmbeddingPipeLayer, model=model),
         *[LayerSpec(LlamaPipeLayer, model=model, layer_idx=idx) for idx in range(len(transformer_layers))],

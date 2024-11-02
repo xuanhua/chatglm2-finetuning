@@ -76,11 +76,12 @@ def preprocess(
     return dict(input_ids=input_ids, labels=labels)
 
 def train_tokenize_function(examples, tokenizer):
+    assert len(examples) == 1
     sources = [
-        build_instruction_prompt(instruction)
-        for instruction in examples['instruction']
+        build_instruction_prompt( example['instruction'])
+        for example in examples
     ]
-    targets = [f"{output}\n{EOT_TOKEN}" for output in examples['output']]
+    targets = [f"{example['output']}\n{EOT_TOKEN}" for example in examples]
     data_dict = preprocess(sources, targets, tokenizer)
     return data_dict
 
@@ -112,8 +113,9 @@ class DeepseekCoderDataSet(Dataset):
                 input_dict = train_tokenize_function([example], tokenizer)
 
                 self.all_data.append(
-                    {"input_ids": torch.LongTensor(input_dict["input_ids"]), 
-                     "labels": torch.LongTensor(input_dict["labels"])})
+                    {"input_ids": input_dict["input_ids"][0], 
+                     "labels": input_dict["labels"][0]
+                    })
 
     def __len__(self):
         return len(self.all_data)

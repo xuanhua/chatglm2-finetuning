@@ -38,6 +38,31 @@ https://github.com/SparkJiao/llama-pipeline-parallel
 Still unknown that if there are actually tied layers in llama model
 """
 
+def _make_causal_mask(
+    input_ids_shape: torch.Size, 
+    dtype: torch.dtype, 
+    device: torch.device, 
+):
+    """
+    Make causal mask used for bi-directional self-attention.
+    It will basically create a matrix or a square like (if the target lenght is 4)：
+
+    0, -inf, -inf, -inf
+    0,    0, -inf, -inf   
+    0,    0,    0, -inf
+    0,    0,    0,    0
+
+    This implmentation is copied from: transformers/models/llama/modeling_llama.py (you can find it in 
+    transformers source code)
+    """
+    bsz, tgt_len = input_ids_shape
+    mask = torch.full((tgt_len, tgt_len), torch.finfo(dtype).min, device=device)
+    mask_cond = torch.arange(mask.size(-1), device=device)
+    mask.masked_fill_(mask_cond < (mask_cond + 1).view(mask.size(-1), 1), 0)
+    mask = mask.to(dtype)
+
+    return mask[None, None, :, :].expand(bsz, 1, tgt_len, tgt_len)
+
 class EmbeddingPipeLayer(torch.nn.Module):
     def __init__(self, model: LlamaForCausalLM):
         super().__init__()
@@ -45,9 +70,14 @@ class EmbeddingPipeLayer(torch.nn.Module):
         self.weight = self.embed_tokens.weight
 
     def forward(self, ipt):
-        input_ids, attention_mask, position_ids = ipt
+        #input_ids, attention_mask, position_ids = ipt
+        input_ids, labels = ipt
         inputs_embeds = self.embed_tokens(input_ids)
-        return inputs_embeds, attention_mask, position_ids
+
+        attention_mask = _make_causal_mask(input_ids.shape,
+                                           torch.half,
+                                           input_ids.device)
+        return inputs_embeds, attention_mask, labels 
 
 class LlamaPipeLayer(torch.nn.Module):
     "One of the multiple layers"
@@ -59,9 +89,9 @@ class LlamaPipeLayer(torch.nn.Module):
         self.gradient_checkpointing = model.model.gradient_checkpointing
 
     def forward(self, ipt):
-        hidden_states, attention_mask, position_ids = ipt
+        hidden_states, attention_mask, labels = ipt
 
-        if self.gradient_checkpointing and self.training:
+        if self.gradient_checkpointing and self.training and 0:
             output_attentions = False
 
             def create_custom_forward(module):
@@ -91,14 +121,14 @@ class LlamaPipeLayer(torch.nn.Module):
             layer_outputs = self.layer(
                 hidden_states,
                 attention_mask=attention_mask,
-                position_ids=position_ids,
+                #position_ids=position_ids,
                 # past_key_value=past_key_value,
                 # output_attentions=output_attentions,
                 # use_cache=use_cache,
             )
 
         hidden_states = layer_outputs[0]
-        return hidden_states, attention_mask, position_ids
+        return hidden_states, attention_mask, labels 
 
 class FLNPipeLayer(torch.nn.Module):
     def __init__(self, model: LlamaForCausalLM):
@@ -106,10 +136,10 @@ class FLNPipeLayer(torch.nn.Module):
         self.norm = model.model.norm
 
     def forward(self, ipt):
-        hidden_states, attention_mask, position_ids = ipt
+        hidden_states, attention_mask, labels = ipt
         hidden_states = self.norm(hidden_states)
 
-        return hidden_states
+        return hidden_states, labels
 
 
 class LMPipeLayer(torch.nn.Module):
@@ -120,10 +150,10 @@ class LMPipeLayer(torch.nn.Module):
         self.config = model.config
 
     def forward(self, ipt):
-        hidden_states = ipt
+        hidden_states, labels = ipt
         logits = torch.nn.functional.linear(hidden_states, self.lm_head.weight)
 
-        return logits
+        return logits, labels
 
 class LossLayer(torch.nn.Module):
     """

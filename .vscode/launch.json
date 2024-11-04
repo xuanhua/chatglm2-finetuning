@@ -105,7 +105,8 @@
         "/data/xuanhua/deepseek_coder_finetuned_models/output_dir_pipeline"
       ],
       "env": {
-        "CUDA_VISIBLE_DEVICES":"0,1"
+        "CUDA_VISIBLE_DEVICES":"0,1",
+        "TOKENIZERS_PARALLELISM":"false"
       },
       "console": "integratedTerminal",
       "justMyCode": false

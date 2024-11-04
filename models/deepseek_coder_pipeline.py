@@ -74,10 +74,7 @@ class EmbeddingPipeLayer(torch.nn.Module):
         input_ids, labels = ipt
         inputs_embeds = self.embed_tokens(input_ids)
 
-        attention_mask = _make_causal_mask(input_ids.shape,
-                                           torch.half,
-                                           input_ids.device)
-        return inputs_embeds, attention_mask, labels 
+        return inputs_embeds, labels 
 
 class LlamaPipeLayer(torch.nn.Module):
     "One of the multiple layers"
@@ -89,7 +86,13 @@ class LlamaPipeLayer(torch.nn.Module):
         self.gradient_checkpointing = model.model.gradient_checkpointing
 
     def forward(self, ipt):
-        hidden_states, attention_mask, labels = ipt
+        #hidden_states, attention_mask, labels = ipt
+        hidden_states,  labels = ipt
+        attention_mask = _make_causal_mask(
+            labels.shape,
+            torch.half,
+            labels.device
+        )
 
         if self.gradient_checkpointing and self.training and 0:
             output_attentions = False
@@ -128,7 +131,7 @@ class LlamaPipeLayer(torch.nn.Module):
             )
 
         hidden_states = layer_outputs[0]
-        return hidden_states, attention_mask, labels 
+        return hidden_states, labels 
 
 class FLNPipeLayer(torch.nn.Module):
     def __init__(self, model: LlamaForCausalLM):
@@ -136,7 +139,7 @@ class FLNPipeLayer(torch.nn.Module):
         self.norm = model.model.norm
 
     def forward(self, ipt):
-        hidden_states, attention_mask, labels = ipt
+        hidden_states, labels = ipt
         hidden_states = self.norm(hidden_states)
 
         return hidden_states, labels

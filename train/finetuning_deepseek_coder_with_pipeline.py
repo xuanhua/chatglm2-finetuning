@@ -61,7 +61,7 @@ def set_args():
     parser.add_argument("--max_len", type=int, default=2048, help="")
     parser.add_argument("--model_max_length", 
                         type=int, 
-                        default=512,
+                        default=2048,
                         help="This argument actually is the max_src_len, it is used for tokenizing batch of inputs")
     parser.add_argument("--max_src_len", type=int, default=1024, help="")
     parser.add_argument("--num_train_epochs", type=int, default=1, help="")
@@ -105,7 +105,7 @@ def main():
                          "weight_decay": 5e-4
                      }
                  },
-                 "fp16": {
+                 "bf16": {
                      "enabled": True
                  },
                  "zero_optimization": {
@@ -136,7 +136,8 @@ def main():
         model_max_length=args.model_max_length
     )
 
-    model = transformers.AutoModelForCausalLM.from_pretrained(args.model_name_or_path)
+    model = transformers.AutoModelForCausalLM.from_pretrained(args.model_name_or_path,
+                                                              torch_dtype=torch.bfloat16)
     model.gradient_checkpointing_enable()
 
     # Lora's config
@@ -156,7 +157,8 @@ def main():
     model_pipe = PipelineModule(layers=get_pipeline_model(model),
                                 num_stages=args.num_stages)
 
-    model_pipe.to(device).half()
+    #model_pipe.to(device).half()
+    model_pipe.to(device, dtype=torch.bfloat16)
 
     train_dataset = DeepseekCoderDataSet(data_path=args.train_path,
                                      tokenizer=tokenizer,

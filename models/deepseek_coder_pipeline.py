@@ -90,7 +90,8 @@ class LlamaPipeLayer(torch.nn.Module):
         hidden_states,  labels = ipt
         attention_mask = _make_causal_mask(
             labels.shape,
-            torch.half,
+            #torch.half,
+            torch.float32,
             labels.device
         )
 
